@@ -26,9 +26,9 @@
 //local lib
 // #include "lidar.h"
 // #include "odomEstimationClass.h"
-#include <CELLmap/TERRA.h>
-#include <CELLmap/lidarOptimization.h>
-#include <CELLmap/tic_toc.h>
+#include <cellmap/CELL.h>
+#include <cellmap/lidarOptimization.h>
+#include <cellmap/tic_toc.h>
 
 
 
@@ -70,14 +70,14 @@ std::vector<Eigen::Isometry3d> pose_list;
 std::vector<Eigen::Isometry3d> opti_pose_list;
 std::vector<pcl::PointCloud<PointType>::Ptr> local_map_list;
 
-std::shared_ptr<TERRA> TERRA_last_local_map;
-std::shared_ptr<TERRA> TERRA_current_local_map;
+std::shared_ptr<CELL> CELL_last_local_map;
+std::shared_ptr<CELL> CELL_current_local_map;
 
 
 ros::Publisher pubbefore_path;
 ros::Publisher pubafter_path;
 ros::Publisher publoop_line;
-ros::Publisher publoop_TERRA;
+ros::Publisher publoop_CELL;
 ros::Publisher publoop_scan;
 
 
@@ -100,7 +100,9 @@ double ball_height = 0;
 int FLAG_LOOP = 0;
 int loop_line_id_count = 0;
 std::ofstream outfile;
+std::ofstream cell_outfile;
 std::string odom_path;
+std::string cell_odom_path;
 std::string output_mode = "kitti";
 
 
@@ -213,10 +215,10 @@ void pulish_loop_line(Eigen::Isometry3d start, Eigen::Isometry3d end, ros::Publi
     pub.publish(line_strip); 
 }
 
-Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::shared_ptr<TERRA> TERRA_current_map){
+Eigen::Isometry3d tfbetweenCELL(std::shared_ptr<CELL> CELL_last_map, std::shared_ptr<CELL> CELL_current_map){
     ////////////////////////////////////////////////////////////////////////////
 
-    Eigen::Isometry3d forward_pose =  TERRA_last_map->get_base_pose().inverse() * TERRA_current_map->get_base_pose();
+    Eigen::Isometry3d forward_pose =  CELL_last_map->get_base_pose().inverse() * CELL_current_map->get_base_pose();
     Eigen::Quaterniond q_forward(forward_pose.rotation());
     Eigen::Vector3d t_forward = forward_pose.translation();
     double parameters[7] = {q_forward.x(), q_forward.y(), q_forward.z(), q_forward.w(), t_forward.x(), t_forward.y(), t_forward.z()};
@@ -234,7 +236,7 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
         TicToc t_add;
 
         pcl::PointCloud<PointType>::Ptr scan_opti;
-        pcl::PointCloud<PointType>::Ptr scan_base = TERRA_current_map->get_cloud();
+        pcl::PointCloud<PointType>::Ptr scan_base = CELL_current_map->get_cloud();
 
     
         // if(iter != 0)
@@ -242,11 +244,11 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
         // else
         // scan_opti = scan_base;
 
-        TERRA TERRA_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
-        TERRA_opti_current.calculate_feature_for(downsample_rate, false);
+        CELL CELL_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
+        CELL_opti_current.calculate_feature_for(downsample_rate, false);
         std::cout<<"feature time: "<<t_add.toc()<<"ms"<<std::endl;
-        std::cout<<"TERRA_last_map->get_valid_feature_num()"<<TERRA_last_map->get_valid_feature_num()<<std::endl;
-        std::cout<<"TERRA_last_map->get_valid_normal_num()"<<TERRA_last_map->get_valid_normal_num()<<std::endl;
+        std::cout<<"CELL_last_map->get_valid_feature_num()"<<CELL_last_map->get_valid_feature_num()<<std::endl;
+        std::cout<<"CELL_last_map->get_valid_normal_num()"<<CELL_last_map->get_valid_normal_num()<<std::endl;
 
 
         #pragma omp parallel for num_threads(16) 
@@ -256,16 +258,16 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
                 continue;
             //////
 
-            int feature_id = TERRA_opti_current.get_point_index(i);
-            if((TERRA_last_map->get_ballpoint_feature(feature_id) != 0)   )  
-            //    (std::abs(TERRA_local_map->get_ballpoint_feature(feature_id) - TERRA_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
+            int feature_id = CELL_opti_current.get_point_index(i);
+            if((CELL_last_map->get_ballpoint_feature(feature_id) != 0)   )  
+            //    (std::abs(CELL_local_map->get_ballpoint_feature(feature_id) - CELL_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
                {
-                Eigen::Vector3d norm = TERRA_last_map->get_ballpoint_normal(feature_id);
+                Eigen::Vector3d norm = CELL_last_map->get_ballpoint_normal(feature_id);
                 if(norm.sum() == 0)
                     continue;
                 
                 // double negative_OA_dot_norm = 1 / norm.norm();
-                double negative_OA_dot_norm = - TERRA_last_map->get_ballpoint_feature(feature_id) *
+                double negative_OA_dot_norm = - CELL_last_map->get_ballpoint_feature(feature_id) *
                                                 (index_tree->getInputCloud()->points[feature_id].x * norm.x() + 
                                                  index_tree->getInputCloud()->points[feature_id].y * norm.y() + 
                                                  index_tree->getInputCloud()->points[feature_id].z * norm.z());
@@ -274,11 +276,11 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
                 Eigen::Vector3d point_eigen(scan_opti->points[i].x, scan_opti->points[i].y, scan_opti->points[i].z);
                 if (abs(norm.dot(point_eigen) + negative_OA_dot_norm) >  inlier_thres / (iter + 1))
                     continue;
-                TERRA_last_map->set_regist_flag(feature_id);
+                CELL_last_map->set_regist_flag(feature_id);
                 Eigen::Vector3d curr_point(scan_base->points[i].x, scan_base->points[i].y, scan_base->points[i].z);
-                double weight = abs(norm.dot(q_predict * TERRA_current_map->get_ballpoint_normal(TERRA_current_map->get_point_index(i))));
-                // std::cout<<"forward i:"<<i<<" index:"<< TERRA_current_map->get_point_index(i)<<" weight: "<<weight
-                //         <<" normal:"<<TERRA_current_map->get_ballpoint_normal(TERRA_current_map->get_point_index(i))[0]<<std::endl;
+                double weight = abs(norm.dot(q_predict * CELL_current_map->get_ballpoint_normal(CELL_current_map->get_point_index(i))));
+                // std::cout<<"forward i:"<<i<<" index:"<< CELL_current_map->get_point_index(i)<<" weight: "<<weight
+                //         <<" normal:"<<CELL_current_map->get_ballpoint_normal(CELL_current_map->get_point_index(i))[0]<<std::endl;
                 // if(weight < 0.95 )
                 //     continue;
                 add_to_vectors(curr_point, norm, negative_OA_dot_norm, weight);
@@ -302,19 +304,19 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
         // forward
         ////////////////////////////////////////////////////////////////////////////
         // back
-        Eigen::Isometry3d back_pose =  TERRA_current_map->get_base_pose().inverse() * TERRA_last_map->get_base_pose();
+        Eigen::Isometry3d back_pose =  CELL_current_map->get_base_pose().inverse() * CELL_last_map->get_base_pose();
         Eigen::Quaterniond q_back(back_pose.rotation());
         Eigen::Vector3d t_back = back_pose.translation();
 
         ///////follow todo
 
-        scan_base = TERRA_last_map->get_cloud();
+        scan_base = CELL_last_map->get_cloud();
         scan_opti = TransformCloud(scan_base, q_back, t_back);
         // else
         // scan_opti = scan_base;
 
-        TERRA TERRA_opti_last(scan_opti, index_tree, Eigen::Isometry3d::Identity());
-        TERRA_opti_last.calculate_feature_for(downsample_rate, false);
+        CELL CELL_opti_last(scan_opti, index_tree, Eigen::Isometry3d::Identity());
+        CELL_opti_last.calculate_feature_for(downsample_rate, false);
         std::cout<<"feature time: "<<t_add.toc()<<"ms"<<std::endl;
         #pragma omp parallel for num_threads(16) 
         for (int i = 0; i < (int)scan_opti->points.size(); i++){
@@ -323,16 +325,16 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
                 continue;
             //////
 
-            int feature_id = TERRA_opti_last.get_point_index(i);
-            if((TERRA_current_map->get_ballpoint_feature(feature_id) != 0)  )  
-            //    (std::abs(TERRA_local_map->get_ballpoint_feature(feature_id) - TERRA_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
+            int feature_id = CELL_opti_last.get_point_index(i);
+            if((CELL_current_map->get_ballpoint_feature(feature_id) != 0)  )  
+            //    (std::abs(CELL_local_map->get_ballpoint_feature(feature_id) - CELL_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
                {
-                Eigen::Vector3d norm = TERRA_current_map->get_ballpoint_normal(feature_id);
+                Eigen::Vector3d norm = CELL_current_map->get_ballpoint_normal(feature_id);
                 if(norm.sum() == 0)
                     continue;
                 
                 // double negative_OA_dot_norm = 1 / norm.norm();
-                double negative_OA_dot_norm = - TERRA_current_map->get_ballpoint_feature(feature_id) *
+                double negative_OA_dot_norm = - CELL_current_map->get_ballpoint_feature(feature_id) *
                                                 (index_tree->getInputCloud()->points[feature_id].x * norm.x() + 
                                                  index_tree->getInputCloud()->points[feature_id].y * norm.y() + 
                                                  index_tree->getInputCloud()->points[feature_id].z * norm.z());
@@ -341,7 +343,7 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
 
                 if (abs(norm.dot(point_eigen) + negative_OA_dot_norm) >  inlier_thres / (iter + 1))
                     continue;
-                TERRA_current_map->set_regist_flag(feature_id);
+                CELL_current_map->set_regist_flag(feature_id);
                 Eigen::Vector3d curr_point(scan_base->points[i].x, scan_base->points[i].y, scan_base->points[i].z);
                 // Eigen::Quaterniond q_w_curr(parameters[3], parameters[0], parameters[1], parameters[2]);
                 // Eigen::Vector3d t_w_curr(parameters[4], parameters[5], parameters[6]);
@@ -349,9 +351,9 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
                 // Eigen::Vector3d t_inverse = q_inverse * (-t_w_curr);
                 // Eigen::Vector3d point_w = q_inverse * curr_point + t_inverse;
                 
-                double weight = abs(norm.dot(q_back * TERRA_last_map->get_ballpoint_normal(TERRA_last_map->get_point_index(i))));
-                // std::cout<<"back i:"<<i<<" index:"<< TERRA_last_map->get_point_index(i)<<" weight: "<<weight
-                //         <<" normal:"<<TERRA_last_map->get_ballpoint_normal(TERRA_last_map->get_point_index(i))[0]<<std::endl;
+                double weight = abs(norm.dot(q_back * CELL_last_map->get_ballpoint_normal(CELL_last_map->get_point_index(i))));
+                // std::cout<<"back i:"<<i<<" index:"<< CELL_last_map->get_point_index(i)<<" weight: "<<weight
+                //         <<" normal:"<<CELL_last_map->get_ballpoint_normal(CELL_last_map->get_point_index(i))[0]<<std::endl;
 
                 // if(weight < 0.95 )
                 //     continue;
@@ -377,7 +379,7 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
         //////////////////////////////////////////////////////////////////////////// back
 
         std::cout<<"t_add: "<<t_add.toc()<<"ms"<<std::endl;
-        ROS_WARN("valid_num %d / %d", valid_num, (int)TERRA_current_map->get_cloud()->points.size() + (int)TERRA_last_map->get_cloud()->points.size());
+        ROS_WARN("valid_num %d / %d", valid_num, (int)CELL_current_map->get_cloud()->points.size() + (int)CELL_last_map->get_cloud()->points.size());
         TicToc t_solve;
 
         
@@ -399,11 +401,11 @@ Eigen::Isometry3d tfbetweenTERRA(std::shared_ptr<TERRA> TERRA_last_map, std::sha
     return qt2Isometry3d(q_predict, t_predict);
 }
 
-//2 for only use terra but not scan
-Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::shared_ptr<TERRA> TERRA_current_map){
+//2 for only use CELL but not scan
+Eigen::Isometry3d tfbetweenCELL2(std::shared_ptr<CELL> CELL_last_map, std::shared_ptr<CELL> CELL_current_map){
     ////////////////////////////////////////////////////////////////////////////
 
-    Eigen::Isometry3d forward_pose =  TERRA_last_map->get_base_pose().inverse() * TERRA_current_map->get_base_pose();
+    Eigen::Isometry3d forward_pose =  CELL_last_map->get_base_pose().inverse() * CELL_current_map->get_base_pose();
     Eigen::Quaterniond q_forward(forward_pose.rotation());
     Eigen::Vector3d t_forward = forward_pose.translation();
     double parameters[7] = {q_forward.x(), q_forward.y(), q_forward.z(), q_forward.w(), t_forward.x(), t_forward.y(), t_forward.z()};
@@ -423,7 +425,7 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
         TicToc t_add;
 
         pcl::PointCloud<PointType>::Ptr scan_opti;
-        pcl::PointCloud<PointType>::Ptr scan_base = TERRA_current_map->get_ballpoint_times_feature();
+        pcl::PointCloud<PointType>::Ptr scan_base = CELL_current_map->get_ballpoint_times_feature();
 
     
         // if(iter != 0)
@@ -431,25 +433,25 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
         // else
         // scan_opti = scan_base;
 
-        TERRA TERRA_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
-        TERRA_opti_current.calculate_feature_for(1, false);
+        CELL CELL_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
+        CELL_opti_current.calculate_feature_for(1, false);
         std::cout<<"feature time: "<<t_add.toc()<<"ms"<<std::endl;
         #pragma omp parallel for num_threads(16) 
         for (int i = 0; i < (int)scan_opti->points.size(); i++){
             
 
             int feature_id = i;
-            if((TERRA_last_map->get_ballpoint_feature(feature_id) != 0) && 
-               (TERRA_opti_current.get_ballpoint_feature(feature_id) != 0) &&
-               (std::abs(TERRA_last_map->get_ballpoint_feature(feature_id) - TERRA_opti_current.get_ballpoint_feature(feature_id)) > 0)  
-            //    (std::abs(TERRA_local_map->get_ballpoint_feature(feature_id) - TERRA_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
+            if((CELL_last_map->get_ballpoint_feature(feature_id) != 0) && 
+               (CELL_opti_current.get_ballpoint_feature(feature_id) != 0) &&
+               (std::abs(CELL_last_map->get_ballpoint_feature(feature_id) - CELL_opti_current.get_ballpoint_feature(feature_id)) > 0)  
+            //    (std::abs(CELL_local_map->get_ballpoint_feature(feature_id) - CELL_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
                ){
-                Eigen::Vector3d norm = TERRA_last_map->get_ballpoint_normal(feature_id);
+                Eigen::Vector3d norm = CELL_last_map->get_ballpoint_normal(feature_id);
                 if(norm.sum() == 0)
                     continue;
                 
                 // double negative_OA_dot_norm = 1 / norm.norm();
-                double negative_OA_dot_norm = - TERRA_last_map->get_ballpoint_feature(feature_id) *
+                double negative_OA_dot_norm = - CELL_last_map->get_ballpoint_feature(feature_id) *
                                                 (index_tree->getInputCloud()->points[feature_id].x * norm.x() + 
                                                  index_tree->getInputCloud()->points[feature_id].y * norm.y() + 
                                                  index_tree->getInputCloud()->points[feature_id].z * norm.z());
@@ -458,9 +460,9 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
                 Eigen::Vector3d point_eigen(scan_opti->points[i].x, scan_opti->points[i].y, scan_opti->points[i].z);
                 if (abs(norm.dot(point_eigen) + negative_OA_dot_norm) >  inlier_thres / (iter + 1))
                     continue;
-                TERRA_last_map->set_regist_flag(feature_id);
+                CELL_last_map->set_regist_flag(feature_id);
                 Eigen::Vector3d curr_point(scan_base->points[i].x, scan_base->points[i].y, scan_base->points[i].z);
-                double weight = abs(norm.dot(q_predict * TERRA_current_map->get_ballpoint_normal(TERRA_current_map->get_point_index(i))));
+                double weight = abs(norm.dot(q_predict * CELL_current_map->get_ballpoint_normal(CELL_current_map->get_point_index(i))));
                 // std::cout<<"weight: "<<weight<<std::endl;
 
    
@@ -486,35 +488,35 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
         // forward
         ////////////////////////////////////////////////////////////////////////////
         // back
-        Eigen::Isometry3d back_pose =  TERRA_current_map->get_base_pose().inverse() * TERRA_last_map->get_base_pose();
+        Eigen::Isometry3d back_pose =  CELL_current_map->get_base_pose().inverse() * CELL_last_map->get_base_pose();
         Eigen::Quaterniond q_back(back_pose.rotation());
         Eigen::Vector3d t_back = back_pose.translation();
 
         ///////follow todo
 
-        scan_base = TERRA_last_map->get_ballpoint_times_feature();
+        scan_base = CELL_last_map->get_ballpoint_times_feature();
         scan_opti = TransformCloud(scan_base, q_back, t_back);
         // else
         // scan_opti = scan_base;
 
-        TERRA TERRA_opti_last(scan_opti, index_tree, Eigen::Isometry3d::Identity());
-        TERRA_opti_last.calculate_feature_for(downsample_rate, false);
+        CELL CELL_opti_last(scan_opti, index_tree, Eigen::Isometry3d::Identity());
+        CELL_opti_last.calculate_feature_for(downsample_rate, false);
         std::cout<<"feature time: "<<t_add.toc()<<"ms"<<std::endl;
         #pragma omp parallel for num_threads(16) 
         for (int i = 0; i < (int)scan_opti->points.size(); i++){
        
             int feature_id = i;
-            if((TERRA_current_map->get_ballpoint_feature(feature_id) != 0) && 
-               (TERRA_opti_last.get_ballpoint_feature(feature_id) != 0) &&
-               (std::abs(TERRA_current_map->get_ballpoint_feature(feature_id) - TERRA_opti_last.get_ballpoint_feature(feature_id)) > 0)  
-            //    (std::abs(TERRA_local_map->get_ballpoint_feature(feature_id) - TERRA_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
+            if((CELL_current_map->get_ballpoint_feature(feature_id) != 0) && 
+               (CELL_opti_last.get_ballpoint_feature(feature_id) != 0) &&
+               (std::abs(CELL_current_map->get_ballpoint_feature(feature_id) - CELL_opti_last.get_ballpoint_feature(feature_id)) > 0)  
+            //    (std::abs(CELL_local_map->get_ballpoint_feature(feature_id) - CELL_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
                ){
-                Eigen::Vector3d norm = TERRA_current_map->get_ballpoint_normal(feature_id);
+                Eigen::Vector3d norm = CELL_current_map->get_ballpoint_normal(feature_id);
                 if(norm.sum() == 0)
                     continue;
                 
                 // double negative_OA_dot_norm = 1 / norm.norm();
-                double negative_OA_dot_norm = - TERRA_current_map->get_ballpoint_feature(feature_id) *
+                double negative_OA_dot_norm = - CELL_current_map->get_ballpoint_feature(feature_id) *
                                                 (index_tree->getInputCloud()->points[feature_id].x * norm.x() + 
                                                  index_tree->getInputCloud()->points[feature_id].y * norm.y() + 
                                                  index_tree->getInputCloud()->points[feature_id].z * norm.z());
@@ -523,7 +525,7 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
 
                 if (abs(norm.dot(point_eigen) + negative_OA_dot_norm) >  inlier_thres / (iter + 1))
                     continue;
-                TERRA_current_map->set_regist_flag(feature_id);
+                CELL_current_map->set_regist_flag(feature_id);
                 Eigen::Vector3d curr_point(scan_base->points[i].x, scan_base->points[i].y, scan_base->points[i].z);
                 // Eigen::Quaterniond q_w_curr(parameters[3], parameters[0], parameters[1], parameters[2]);
                 // Eigen::Vector3d t_w_curr(parameters[4], parameters[5], parameters[6]);
@@ -531,9 +533,9 @@ Eigen::Isometry3d tfbetweenTERRA2(std::shared_ptr<TERRA> TERRA_last_map, std::sh
                 // Eigen::Vector3d t_inverse = q_inverse * (-t_w_curr);
                 // Eigen::Vector3d point_w = q_inverse * curr_point + t_inverse;
                 
-                double weight = abs(norm.dot(q_back * TERRA_last_map->get_ballpoint_normal(TERRA_last_map->get_point_index(i))));
-                // std::cout<<"i:"<<i<<" index:"<< TERRA_last_map->get_point_index(i)<<" weight: "<<weight
-                //         <<" normal:"<<TERRA_last_map->get_ballpoint_normal(TERRA_last_map->get_point_index(i))<<std::endl;
+                double weight = abs(norm.dot(q_back * CELL_last_map->get_ballpoint_normal(CELL_last_map->get_point_index(i))));
+                // std::cout<<"i:"<<i<<" index:"<< CELL_last_map->get_point_index(i)<<" weight: "<<weight
+                //         <<" normal:"<<CELL_last_map->get_ballpoint_normal(CELL_last_map->get_point_index(i))<<std::endl;
               
                 add_to_vectors(curr_point, norm, negative_OA_dot_norm, weight);
 
@@ -602,8 +604,8 @@ std::pair<Eigen::Isometry3d, double> loop_closure_process( pcl::PointCloud<Point
     Eigen::Map<Eigen::Quaterniond> q_predict = Eigen::Map<Eigen::Quaterniond>(parameters);
     Eigen::Map<Eigen::Vector3d> t_predict = Eigen::Map<Eigen::Vector3d>(parameters+4);
 
-    std::shared_ptr<TERRA> TERRA_last_map = std::make_shared<TERRA>(scan, index_tree, base_pose);
-    TERRA_last_map->from_ros_feature(local_map);
+    std::shared_ptr<CELL> CELL_last_map = std::make_shared<CELL>(scan, index_tree, base_pose);
+    CELL_last_map->from_ros_feature(local_map);
 
     ceres::LossFunction *loss_function = new ceres::HuberLoss(0.1);
     ceres::Problem::Options problem_options;
@@ -624,8 +626,8 @@ std::pair<Eigen::Isometry3d, double> loop_closure_process( pcl::PointCloud<Point
         // else
         // scan_opti = scan_base;
 
-        TERRA TERRA_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
-        TERRA_opti_current.calculate_feature_for(downsample_rate, false);
+        CELL CELL_opti_current(scan_opti, index_tree, Eigen::Isometry3d::Identity());
+        CELL_opti_current.calculate_feature_for(downsample_rate, false);
         // std::cout<<"feature time: "<<t_add.toc()<<"ms"<<std::endl;
         #pragma omp parallel for num_threads(16) 
         for (int i = 0; i < (int)scan_opti->points.size(); i++){
@@ -634,16 +636,16 @@ std::pair<Eigen::Isometry3d, double> loop_closure_process( pcl::PointCloud<Point
                 continue;
             //////
 
-            int feature_id = TERRA_opti_current.get_point_index(i);
-            if((TERRA_last_map->get_ballpoint_feature(feature_id) != 0))  
-            //    (std::abs(TERRA_local_map->get_ballpoint_feature(feature_id) - TERRA_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
+            int feature_id = CELL_opti_current.get_point_index(i);
+            if((CELL_last_map->get_ballpoint_feature(feature_id) != 0))  
+            //    (std::abs(CELL_local_map->get_ballpoint_feature(feature_id) - CELL_opti.get_ballpoint_feature(feature_id)) < high_threshs[iter < high_threshs.size() - 1? iter : high_threshs.size() - 1])
                {
-                Eigen::Vector3d norm = TERRA_last_map->get_ballpoint_normal(feature_id);
+                Eigen::Vector3d norm = CELL_last_map->get_ballpoint_normal(feature_id);
                 if(norm.sum() == 0)
                     continue;
                 
                 // double negative_OA_dot_norm = 1 / norm.norm();
-                double negative_OA_dot_norm = - TERRA_last_map->get_ballpoint_feature(feature_id) *
+                double negative_OA_dot_norm = - CELL_last_map->get_ballpoint_feature(feature_id) *
                                                 (index_tree->getInputCloud()->points[feature_id].x * norm.x() + 
                                                  index_tree->getInputCloud()->points[feature_id].y * norm.y() + 
                                                  index_tree->getInputCloud()->points[feature_id].z * norm.z());
@@ -652,11 +654,11 @@ std::pair<Eigen::Isometry3d, double> loop_closure_process( pcl::PointCloud<Point
                 Eigen::Vector3d point_eigen(scan_opti->points[i].x, scan_opti->points[i].y, scan_opti->points[i].z);
                 if (abs(norm.dot(point_eigen) + negative_OA_dot_norm) >  inlier_thres_loop) // / (iter + 1)
                     continue;
-                TERRA_last_map->set_regist_flag(feature_id);
+                CELL_last_map->set_regist_flag(feature_id);
                 Eigen::Vector3d curr_point(scan_base->points[i].x, scan_base->points[i].y, scan_base->points[i].z);
-                // double weight = abs(norm.dot(q_predict * TERRA_current_map->get_ballpoint_normal(TERRA_current_map->get_point_index(i))));
-                // std::cout<<"forward i:"<<i<<" index:"<< TERRA_current_map->get_point_index(i)<<" weight: "<<weight
-                //         <<" normal:"<<TERRA_current_map->get_ballpoint_normal(TERRA_current_map->get_point_index(i))[0]<<std::endl;
+                // double weight = abs(norm.dot(q_predict * CELL_current_map->get_ballpoint_normal(CELL_current_map->get_point_index(i))));
+                // std::cout<<"forward i:"<<i<<" index:"<< CELL_current_map->get_point_index(i)<<" weight: "<<weight
+                //         <<" normal:"<<CELL_current_map->get_ballpoint_normal(CELL_current_map->get_point_index(i))[0]<<std::endl;
                 // if(weight < 0.95 )
                 //     continue;
                 add_to_vectors(curr_point, norm, negative_OA_dot_norm, 1);
@@ -783,11 +785,11 @@ void OdomHandler(const nav_msgs::Odometry::ConstPtr &msg)
 }
 
 
-std::vector<int> loop_detection(std::shared_ptr<TERRA> TERRA_current_map){ //return index in base_id_list
+std::vector<int> loop_detection(std::shared_ptr<CELL> CELL_current_map){ //return index in base_id_list
     PointType current_pose;
-    current_pose.x = TERRA_current_map->get_base_pose().translation().x(); 
-    current_pose.y = TERRA_current_map->get_base_pose().translation().y(); 
-    current_pose.z = TERRA_current_map->get_base_pose().translation().z();
+    current_pose.x = CELL_current_map->get_base_pose().translation().x(); 
+    current_pose.y = CELL_current_map->get_base_pose().translation().y(); 
+    current_pose.z = CELL_current_map->get_base_pose().translation().z();
     std::vector<int> loop_id_candidates;
     if(pose_tree->getInputCloud()->points.size() == 0)
         return loop_id_candidates;
@@ -797,7 +799,7 @@ std::vector<int> loop_detection(std::shared_ptr<TERRA> TERRA_current_map){ //ret
 
     pose_tree->nearestKSearch(current_pose, loop_num, pointIdxNKNSearch, pointNKNSquaredDistance); // index in base_id_list
     std::cout<< "\033[36m"; 
-    std::cout<<"fine loop closure between: "<<TERRA_current_map->base_id<<" and "<<std::endl;
+    std::cout<<"fine loop closure between: "<<CELL_current_map->base_id<<" and "<<std::endl;
     for(size_t j = 0; j < loop_num; j ++){
         if(j == pose_tree->getInputCloud()->points.size())
             break;
@@ -904,20 +906,20 @@ void LocalmapHandler(const sensor_msgs::PointCloud2ConstPtr &msg)
     local_map_list.push_back(localmap); // for loop closure
 
     if(base_id_list.size() == 0){
-        TERRA_last_local_map = std::make_shared<TERRA>(scan, index_tree, pose_list[pose_i]);
-        TERRA_last_local_map->calculate_feature_for(downsample_rate, false);
-        TERRA_last_local_map->from_ros_feature(localmap);
+        CELL_last_local_map = std::make_shared<CELL>(scan, index_tree, pose_list[pose_i]);
+        CELL_last_local_map->calculate_feature_for(downsample_rate, false);
+        CELL_last_local_map->from_ros_feature(localmap);
         base_id_list.push_back(0);
-        TERRA_last_local_map->base_id = 0;
+        CELL_last_local_map->base_id = 0;
     }
     else{
         base_id_list.push_back(pose_i);
-        TERRA_current_local_map = std::make_shared<TERRA>(scan, index_tree, pose_list[pose_i]);
-        TERRA_current_local_map->calculate_feature_for(downsample_rate, false);
-        TERRA_current_local_map->from_ros_feature(localmap);
-        TERRA_current_local_map->base_id = pose_i;
+        CELL_current_local_map = std::make_shared<CELL>(scan, index_tree, pose_list[pose_i]);
+        CELL_current_local_map->calculate_feature_for(downsample_rate, false);
+        CELL_current_local_map->from_ros_feature(localmap);
+        CELL_current_local_map->base_id = pose_i;
         
-        Eigen::Isometry3d optiTF = tfbetweenTERRA(TERRA_last_local_map, TERRA_current_local_map); // bifirection
+        Eigen::Isometry3d optiTF = tfbetweenCELL(CELL_last_local_map, CELL_current_local_map); // bifirection
 
         gtsam::Pose3 poseBetween = eigen2gtsamPose(optiTF);
         double weight = 3;
@@ -940,8 +942,8 @@ void LocalmapHandler(const sensor_msgs::PointCloud2ConstPtr &msg)
         ///// loop closure
         if(FLAG_LOOP){
             TicToc t_loop_detection;
-            // TERRA_current_local_map->base_pose = opti_pose_list[opti_pose_list.size()-1];
-            std::vector<int> loop_id_candidates = loop_detection(TERRA_current_local_map);
+            // CELL_current_local_map->base_pose = opti_pose_list[opti_pose_list.size()-1];
+            std::vector<int> loop_id_candidates = loop_detection(CELL_current_local_map);
             if(loop_id_candidates.size() > 0){
                 for(size_t k = 0; k < 1; k++){ //loop_id_candidates.size()
                     std::pair<Eigen::Isometry3d, double> loop_out = loop_closure_process(scan, opti_pose_list[pose_i],
@@ -983,7 +985,7 @@ void LocalmapHandler(const sensor_msgs::PointCloud2ConstPtr &msg)
             }
             //////loop closure
         }
-        TERRA_last_local_map = TERRA_current_local_map; 
+        CELL_last_local_map = CELL_current_local_map; 
     }
 }
 
@@ -1038,10 +1040,10 @@ int main(int argc, char **argv)
 
     nh.getParam("odom_path", odom_path);
     nh.getParam("output_mode", output_mode);
-
+    nh.getParam("cell_odom_path", cell_odom_path);
 
     outfile.open(odom_path, ios::out | ios::trunc);
-
+    cell_outfile.open(cell_odom_path, ios::out | ios::trunc);
     
     nh.getParam("topic", topic);
     std::cout<<"input topic:"<< topic<<std::endl;
@@ -1051,7 +1053,7 @@ int main(int argc, char **argv)
 
 
     ros::Subscriber subLiDARscan = nh.subscribe<sensor_msgs::PointCloud2>(topic, 1000, LiDARscanHandler);
-    ros::Subscriber subodom = nh.subscribe<nav_msgs::Odometry>("/TERRAodom", 1000, OdomHandler);
+    ros::Subscriber subodom = nh.subscribe<nav_msgs::Odometry>("/odom", 1000, OdomHandler);
     ros::Subscriber subLocalmap = nh.subscribe<sensor_msgs::PointCloud2>("/ros_feature", 1000, LocalmapHandler);
 
     gtsam::ISAM2Params parameters;
@@ -1068,7 +1070,7 @@ int main(int argc, char **argv)
     // pubpointcloud_indice = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_indice", 1000); 
     // pubpointcloud_normal = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_normal", 1000); 
     // pubros_feature = nh.advertise<sensor_msgs::PointCloud2>("/ros_feature", 1000);
-    publoop_TERRA = nh.advertise<sensor_msgs::PointCloud2>("/loop_feature", 1000); 
+    publoop_CELL = nh.advertise<sensor_msgs::PointCloud2>("/loop_feature", 1000); 
     publoop_scan = nh.advertise<sensor_msgs::PointCloud2>("/loop_scan", 1000); ;
     pubbefore_path = nh.advertise<nav_msgs::Path>("/before_path", 1000);
     pubafter_path = nh.advertise<nav_msgs::Path>("/after_path", 1000);

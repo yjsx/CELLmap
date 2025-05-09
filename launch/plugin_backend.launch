@@ -2,7 +2,7 @@
 <launch>
     <arg name="play_bag" default="true" />
     <!-- <arg name="bag_file" default="/media/yjsx/F132E395F2135FE3/dataset/kitti/$(arg seq).bag"/> -->
-    <node pkg="rviz" name="rviz_odom" type="rviz" args="-d $(find sphere_slam)/launch/odom.rviz" />
+    <node pkg="rviz" name="rviz_odom" type="rviz" args="-d $(find cellmap)/launch/plugin_backend.rviz" />
     
     <!-- <node name="player" pkg="rosbag" type="play" output="log" args="clock $(arg bag_file) -d 3 -r 1" if="$(arg play_bag)"/> -->
     
@@ -20,20 +20,22 @@
 
     <arg name="ws_path" default="path/to/ws" />
 
-    <!-- <arg name="input_odom_path" default="/home/yjsx/catkin_yjsx/src/sphere_slam/result/traj/gt/$(arg seq).txt" /> -->
-    <arg name="input_odom_path" default="$(arg ws_path)/data/odom.txt" />
-    <arg name="frontend_odom_path" default="$(arg ws_path)/data/frontend_odom.txt" />
-    <arg name="backend_odom_path" default="$(arg ws_path)/data/backend_odom.txt" />
+    <arg name="input_odom_path" default="$(arg ws_path)/trajectory/odom.txt" />
+    <arg name="frontend_odom_path" default="$(arg ws_path)/trajectory/frontend_odom.txt" />
+    <arg name="backend_odom_path" default="$(arg ws_path)/trajectory/backend_odom.txt" />
+    <arg name="cellmap_path" default="$(arg ws_path)/cellmap/" />
+    <arg name="cell_odom_path" default="$(arg ws_path)/cellmap/cell_odom.txt" />
 
 
-    <node pkg="CELLmap" type="pub_pose_from_file" name="pub_pose_from_file" output="log" >
+    <node pkg="cellmap" type="pub_pose_cloud" name="pub_pose_cloud" output="screen" >
         <param name="/pose_file_path" type="string" value="$(arg input_odom_path)"/>
         <param name="/pointcloud_topic" type="string" value="$(arg topic)"/>
         <param name="/rosbag_path" type="string" value="$(arg bag_file)"/> 
         <param name="/rate_in" type="int" value="10"/> 
+        <param name="/time_type" type="int" value="0"/>
     </node> 
 
-    <node pkg="CELLmap" type="pointcloud_to_cell_node" name="jh_pointcloud_to_cell_node" output="log" >
+    <node pkg="cellmap" type="pointcloud_to_cell_node" name="pointcloud_to_cell_node" output="screen" >
         <param name="/param_ball_num" type="int" value="$(arg param_ball_num)"/>
         <param name="/base_gap" type="int" value="$(arg base_gap)"/>
         <param name="/param_iter" type="int" value="$(arg param_iter)"/>
@@ -47,12 +49,12 @@
         <param name="/ransac_thres" type="double" value="$(arg ransac_thres)"/> 
     
         <param name="/odom_path" type="string" value="$(arg frontend_odom_path)"/> 
-        <param name="/topic" type="string" value="/jh_cloud"/>
+        <param name="/topic" type="string" value="/raw_cloud"/>
         <param name="/odomtopic" type="string" value="/odom"/>
-
+        <param name="/cellmap_path" type="string" value="$(arg cellmap_path)"/>
     </node>
 
-    <node pkg="CELLmap" type="backend_node" name="jh_backend_node" output="screen" >
+    <node pkg="cellmap" type="backend_node" name="backend_node" output="screen" >
         <param name="/param_ball_num" type="int" value="$(arg param_ball_num)"/>
         <param name="/param_iter" type="int" value="$(arg param_iter)"/>
         <param name="/downsample_rate" type="int" value="5"/> 
@@ -64,7 +66,9 @@
          <!-- tum or kitti -->
         <param name="/output_mode" type="string" value="tum"/>  
         <param name="/odom_path" type="string" value="$(arg backend_odom_path)"/> 
-        <param name="/topic" type="string" value="/jh_cloud"/>
+        <param name="/cell_odom_path" type="string" value="$(arg cell_odom_path)"/> 
+
+        <param name="/topic" type="string" value="/raw_cloud"/>
     </node>
 
 

@@ -1,5 +1,5 @@
 
-#include <jh_mapping/lidarOptimization.h>
+#include <cellmap/lidarOptimization.h>
 
 EdgeAnalyticCostFunction::EdgeAnalyticCostFunction(Eigen::Vector3d curr_point_, Eigen::Vector3d last_point_a_, Eigen::Vector3d last_point_b_)
         : curr_point(curr_point_), last_point_a(last_point_a_), last_point_b(last_point_b_){

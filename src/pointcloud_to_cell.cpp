@@ -25,9 +25,9 @@
 //local lib
 // #include "lidar.h"
 // #include "odomEstimationClass.h"
-#include <jh_mapping/TERRA.h>
-#include <jh_mapping/lidarOptimization.h>
-#include <jh_mapping/tic_toc.h>
+#include <cellmap/CELL.h>
+#include <cellmap/lidarOptimization.h>
+#include <cellmap/tic_toc.h>
 // OdomEstimationClass odomEstimation;
 std::mutex mutex_lock;
 std::mutex mtx_path;
@@ -38,8 +38,8 @@ pcl::KdTreeFLANN<PointType>::Ptr index_tree;
 std::vector<Eigen::Isometry3d> pose_list;
 std::vector<double> pose_time_list;
 
-std::shared_ptr<TERRA> TERRA_local_map;
-// TERRA TERRA_local_map;
+std::shared_ptr<CELL> CELL_local_map;
+// CELL CELL_local_map;
 
 ros::Publisher pubLaserOdometry;
 ros::Publisher pubball_scan;
@@ -80,6 +80,7 @@ double ransac_thres = 0.01;
 
 std::ofstream outfile;
 std::string odom_path;
+std::string cellmap_path;
 
 void LiDARscanHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
 {
@@ -140,7 +141,8 @@ void odom_estimation(){
     pcl::PointCloud<PointType>::Ptr scan_raw(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr scan(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr scan_base(new pcl::PointCloud<PointType>());
-    while(1){
+    int cell_num = 0;
+    while(ros::ok()){
         if(!LiDARscanBuf.empty()){
             double timestamp = LiDARscanBuf.front()->header.stamp.toSec();
             while(pose_time_list.empty() || timestamp > pose_time_list[pose_time_list.size()-1]){
@@ -179,98 +181,73 @@ void odom_estimation(){
             if(total_frame == 0){
                 Eigen::Isometry3d base_pose = pose;
                 // base_pose.translation().z() = ball_height;
-                TERRA_local_map = std::make_shared<TERRA>(TransformCloud(scan, base_pose), index_tree, base_pose, timestamp);
-                TERRA_local_map->calculate_feature_for(downsample_rate, false);
-                // TERRA_local_map->calculate_normal();
-                // TERRA_local_map->calculate_normal_and_feature(plane_thres, area_point_thres, false);
-                // TERRA_local_map->evaluate_degeneracy();
-                // TERRA_local_map->pub_ros_feature(pubros_feature, "map");
+                CELL_local_map = std::make_shared<CELL>(TransformCloud(scan, base_pose), index_tree, base_pose, timestamp);
+                CELL_local_map->calculate_feature_for(downsample_rate, false);
 
-                *ball_global_map += * TERRA_local_map->get_feature_ball_global();
+                *ball_global_map += * CELL_local_map->get_feature_ball_global();
 
 
             }
-            // TERRA_local_map->draw_pointcloud_regist_flag(pubpointcloud_regflag, timestamp, "map");
-            // TERRA_local_map->draw_pointcloud_feature(pubpointcloud_feature, timestamp, "map");
-            // TERRA_local_map->draw_feature_global(pubfeature_global, timestamp, "map");
+            // CELL_local_map->draw_pointcloud_regist_flag(pubpointcloud_regflag, timestamp, "map");
+            // CELL_local_map->draw_pointcloud_feature(pubpointcloud_feature, timestamp, "map");
+            // CELL_local_map->draw_feature_global(pubfeature_global, timestamp, "map");
 
-            // TERRA_local_map->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
-            // TERRA_local_map->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
-            // TERRA_local_map->draw_pointcloud_mineigenvalue(pubpointcloud_mineigenvalue, timestamp, "map");
-            // TERRA_local_map->draw_feature_plane(pubfeature_plane, timestamp, "map");
+            // CELL_local_map->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
+            // CELL_local_map->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
+            // CELL_local_map->draw_pointcloud_mineigenvalue(pubpointcloud_mineigenvalue, timestamp, "map");
+            // CELL_local_map->draw_feature_plane(pubfeature_plane, timestamp, "map");
 
 
-            TERRA_local_map->clean_regist_flag();
-            TERRA_local_map->evaluate_degeneracy();
+            CELL_local_map->clean_regist_flag();
+            CELL_local_map->evaluate_degeneracy();
 
             
 
-            if((TERRA_local_map->get_base_pose().translation() - pose.translation()).norm() > base_gap && total_frame > 0){
-                // TERRA_local_map->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
+            if((CELL_local_map->get_base_pose().translation() - pose.translation()).norm() > base_gap && total_frame > 0){
+                // CELL_local_map->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
 
-                TERRA_local_map->calculate_normal_and_feature3(plane_thres, area_point_thres, ransac_thres, false);
-                // TERRA_local_map->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
+                CELL_local_map->calculate_normal_and_feature3(plane_thres, area_point_thres, ransac_thres, false);
+                // CELL_local_map->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
 
-                // TERRA_frame->draw_feature_plane(pubfeature_plane, timestamp, "map");
+                // CELL_frame->draw_feature_plane(pubfeature_plane, timestamp, "map");
 
-                TERRA_local_map->pub_ros_feature(pubros_feature, "map");
-                *ball_global_map += * TERRA_local_map->get_feature_ball_global();
+                CELL_local_map->pub_ros_feature(pubros_feature, "map", cellmap_path, cell_num);
+                cell_num++;
+                *ball_global_map += * CELL_local_map->get_feature_ball_global();
                 // ROS_WARN("+++++++++++++++ new base++++++++++++++");
 
-                TERRA_local_map = std::make_shared<TERRA>(scan_raw, index_tree, pose, timestamp);
-                TERRA_local_map->calculate_feature_for(downsample_rate, false);
-                // TERRA_local_map->calculate_normal();
-                // TERRA_local_map->calculate_normal_and_feature(plane_thres, area_point_thres, false);
-                // TERRA_local_map->evaluate_degeneracy();
-                
-                // TERRA_local_map->draw_ball(pubball_scan, timestamp, "map");
-                // TERRA_local_map->draw_pointcloud_feature(pubpointcloud_feature, timestamp, "map");
-                // TERRA_local_map->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
-                // TERRA_local_map->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
-
+                CELL_local_map = std::make_shared<CELL>(scan_raw, index_tree, pose, timestamp);
+                CELL_local_map->calculate_feature_for(downsample_rate, false);
 
             }
             else{ // update
 
-                tfscan_base = TransformCloud(scan, TERRA_local_map->get_base_pose().inverse() * pose);
-                std::shared_ptr<TERRA> TERRA_frame = std::make_shared<TERRA>(tfscan_base, index_tree, pose, timestamp);
-                TERRA_frame->calculate_feature_for(downsample_rate, false);
+                tfscan_base = TransformCloud(scan, CELL_local_map->get_base_pose().inverse() * pose);
+                std::shared_ptr<CELL> CELL_frame = std::make_shared<CELL>(tfscan_base, index_tree, pose, timestamp);
+                CELL_frame->calculate_feature_for(downsample_rate, false);
 
 
-                // TERRA_frame->calculate_normal_and_feature(plane_thres, area_point_thres, false);
+                // CELL_frame->calculate_normal_and_feature(plane_thres, area_point_thres, false);
 
-                // TERRA_frame->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
-                // TERRA_frame->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
-                // TERRA_frame->draw_pointcloud_mineigenvalue(pubpointcloud_mineigenvalue, timestamp, "map");
-                // TERRA_frame->draw_feature_plane(pubfeature_plane, timestamp, "map");
+                // CELL_frame->draw_pointcloud_indice(pubpointcloud_indice, timestamp, "map");
+                // CELL_frame->draw_pointcloud_normal(pubpointcloud_normal, timestamp, "map");
+                // CELL_frame->draw_pointcloud_mineigenvalue(pubpointcloud_mineigenvalue, timestamp, "map");
+                // CELL_frame->draw_feature_plane(pubfeature_plane, timestamp, "map");
 
-                int occluded_num = TERRA_local_map->update3(TERRA_frame, plane_thres);
-                // TERRA_local_map->evaluate_degeneracy();
+                int occluded_num = CELL_local_map->update(CELL_frame, plane_thres);
+                // CELL_local_map->evaluate_degeneracy();
 
-                TERRA_local_map->draw_ball(pubball_scan, timestamp, "map");
+                CELL_local_map->draw_ball(pubball_scan, timestamp, "map");
 
-                std::cout<<"valid_num: "<<TERRA_local_map->get_valid_feature_num()<<std::endl;
-                if(occluded_num > TERRA_local_map->get_valid_feature_num() * occlusion_thres ){
+                std::cout<<"valid_num: "<<CELL_local_map->get_valid_feature_num()<<std::endl;
+                if(occluded_num > CELL_local_map->get_valid_feature_num() * occlusion_thres ){
                     ROS_WARN("+++++++++++++++ new base for occlusion +++++++++++++++");
-                    TERRA_local_map->pub_ros_feature(pubros_feature, "map");
-                    *ball_global_map += * TERRA_local_map->get_feature_ball_global();
-                    TERRA_local_map = std::make_shared<TERRA>(scan_raw, index_tree, pose, timestamp);
-                    TERRA_local_map->calculate_feature_for(downsample_rate, false);
-
-                    // TERRA_local_map->calculate_normal_and_feature(plane_thres, area_point_thres, false);
-                    // TERRA_local_map->evaluate_degeneracy();
-
+                    CELL_local_map->pub_ros_feature(pubros_feature, "map", cellmap_path, cell_num);
+                    cell_num++;
+                    *ball_global_map += * CELL_local_map->get_feature_ball_global();
+                    CELL_local_map = std::make_shared<CELL>(scan_raw, index_tree, pose, timestamp);
+                    CELL_local_map->calculate_feature_for(downsample_rate, false);
                 }
-                // if(TERRA_local_map->new_num > TERRA_local_map->get_valid_feature_num() / 2 ){
-                //     ROS_WARN("+++++++++++++++ new base for new +++++++++++++++");
-                //     TERRA_local_map->pub_ros_feature(pubros_feature, "map");
-                //     *ball_global_map += * TERRA_local_map->get_feature_ball_global();
-                //     TERRA_local_map = std::make_shared<TERRA>(scan_raw, index_tree, pose, timestamp);
-                //     TERRA_local_map->calculate_normal_and_feature(plane_thres, area_point_thres, false);
-                //     TERRA_local_map->evaluate_degeneracy();
-
-                // }
-
             }
 
             Eigen::Quaterniond q_current(pose.rotation());
@@ -280,10 +257,13 @@ void odom_estimation(){
             std::cout<<"frame "<<total_frame<<" "<<"t:"<<pose.translation().transpose()
                                                 <<" "<<"q:"<<q_current.x()<<" "<<q_current.y()<<" "<<q_current.z()<<" "<<q_current.w()<<std::endl<<std::endl;
             
-            Eigen::Matrix4d rm = pose.matrix();
-            outfile<<rm(0,0)<<" "<<rm(0,1)<<" "<<rm(0,2)<<" "<<rm(0,3)<<" "
-                   <<rm(1,0)<<" "<<rm(1,1)<<" "<<rm(1,2)<<" "<<rm(1,3)<<" "
-                   <<rm(2,0)<<" "<<rm(2,1)<<" "<<rm(2,2)<<" "<<rm(2,3)<<std::endl;
+            // Eigen::Matrix4d rm = pose.matrix();
+            // outfile<<rm(0,0)<<" "<<rm(0,1)<<" "<<rm(0,2)<<" "<<rm(0,3)<<" "
+            //        <<rm(1,0)<<" "<<rm(1,1)<<" "<<rm(1,2)<<" "<<rm(1,3)<<" "
+            //        <<rm(2,0)<<" "<<rm(2,1)<<" "<<rm(2,2)<<" "<<rm(2,3)<<std::endl;
+
+            outfile<< std::fixed << std::setprecision(6) 
+                   <<timestamp<<" "<<t_current.x()<<" "<<t_current.y()<<" "<<t_current.z()<<" "<<q_current.x()<<" "<<q_current.y()<<" "<<q_current.z()<<" "<<q_current.w()<<std::endl;
             //pub odometry
             nav_msgs::Odometry laserOdometry;
             laserOdometry.header.frame_id = "map";
@@ -330,7 +310,7 @@ int main(int argc, char **argv)
 
 
     std::string topic = "/rslidar_points";
-    std::string odomtopic = "/rslidar_points";
+    std::string odomtopic = "/odom";
 
     nh.getParam("param_ball_num", param_ball_num); 
     nh.getParam("base_gap", base_gap); 
@@ -348,10 +328,8 @@ int main(int argc, char **argv)
 
     nh.getParam("odomtopic", odomtopic);
     nh.getParam("topic", topic);
+    nh.getParam("cellmap_path", cellmap_path);
 
-
-
-    
 
     outfile.open(odom_path, ios::out | ios::trunc);
 
@@ -367,7 +345,7 @@ int main(int argc, char **argv)
     ros::Subscriber subLiDARscan = nh.subscribe<sensor_msgs::PointCloud2>(topic, 1000, LiDARscanHandler);
     ros::Subscriber subodom = nh.subscribe<nav_msgs::Odometry>(odomtopic, 1000, OdomHandler);
 
-    pubLaserOdometry = nh.advertise<nav_msgs::Odometry>("/TERRAodom", 100);
+    pubLaserOdometry = nh.advertise<nav_msgs::Odometry>("/CELLodom", 100);
     pubball_scan = nh.advertise<sensor_msgs::PointCloud2>("/ball_scan", 1000);
     pubtfscan = nh.advertise<sensor_msgs::PointCloud2>("/tfscan", 1000);
     pubball_local_map = nh.advertise<sensor_msgs::PointCloud2>("/ball_local_map", 1000);

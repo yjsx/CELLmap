@@ -16,10 +16,10 @@
 #include <pcl/visualization/pcl_visualizer.h> 
 
 #include <ros/ros.h>
-#include <CELLmap/common.h>
-#include <CELLmap/tic_toc.h>
+#include <cellmap/common.h>
+#include <cellmap/tic_toc.h>
 
-class TERRA {
+class CELL {
 public:
 
     double new_num;
@@ -28,12 +28,11 @@ public:
     int base_id;
     Eigen::Isometry3d base_pose;
 
-    TERRA() {}
-    TERRA(const pcl::PointCloud<PointType>::Ptr& cloud, const pcl::KdTreeFLANN<PointType>::Ptr& index_tree, const Eigen::Isometry3d& base_pose, const double timestamp=0)
+    CELL(const pcl::PointCloud<PointType>::Ptr& cloud, const pcl::KdTreeFLANN<PointType>::Ptr& index_tree, const Eigen::Isometry3d& base_pose, const double timestamp=0)
         : cloud(cloud), index_tree(index_tree), base_pose(base_pose), timestamp(timestamp),
           feature_length(index_tree->getInputCloud()->points.size()), 
           feature(Eigen::VectorXd::Zero(feature_length)), 
-          ball_distence(Eigen::VectorXd::Zero(feature_length)), // 球面距离
+          ball_distence(Eigen::VectorXd::Zero(feature_length)), // spherical distance
           normals(feature_length, Eigen::Vector3d::Zero()), 
           area_points(feature_length), 
           indices(Eigen::VectorXd::Zero(cloud->points.size())),
@@ -50,8 +49,8 @@ public:
         }
         initializeAreaPoints();
     }
-    ~TERRA() {
-        // 释放资源
+    ~CELL() {
+        // Release resources
     }
 
     void initializeAreaPoints() {  
@@ -255,74 +254,6 @@ public:
                         valid_num += area_point_num[i];
                     }
                 }
-                // else{ //// use ransac for more plane
-                //     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);  
-                //     std::cout<<"ransac:"<<area_point_num[i]<<std::endl;
-                //     // 分配足够的空间给点云  
-                //     cloud->width = area_point_num[i];  
-                //     cloud->height = 1; 
-                //     cloud->is_dense = true;  
-                //     cloud->points.resize(cloud->width * cloud->height);  
-
-                //     // 将 std::vector<Eigen::Vector3d> 转换为 pcl::PointCloud<pcl::PointXYZ>  
-                //     for (size_t j = 0; j < area_point_num[i]; ++j) {  
-                //         cloud->points[j].x = nearCorners[i][j](0);  
-                //         cloud->points[j].y = nearCorners[i][j](1);  
-                //         cloud->points[j].z = nearCorners[i][j](2);  
-                //     }  
-
-                //     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-                //     //inliers表示误差能容忍的点 记录的是点云的序号
-                //     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-                //     //创建分割器
-                //     pcl::SACSegmentation<pcl::PointXYZ> seg;
-                //     seg.setOptimizeCoefficients(true);
-                //     seg.setModelType(pcl::SACMODEL_PLANE);
-                //     seg.setMethodType(pcl::SAC_RANSAC);
-                //     seg.setDistanceThreshold(0.03);
-                //     seg.setMaxIterations(500);
-                //     seg.setInputCloud(cloud);
-                //     seg.segment(*inliers, *coefficients);
-              
-                //     if(inliers->indices.size() > area_point_thres){
-
-                //         std::cout<<"inlier num:"<< inliers->indices.size()<<" / "<< area_point_num[i]<<std::endl;
-                //         std::cerr << "Model coefficients: " << coefficients->values[0] << " "
-                //             << coefficients->values[1] << " "
-                //             << coefficients->values[2] << " "
-                //             << coefficients->values[3] << std::endl;
-
-
-                //         centers[i] = Eigen::Vector3d::Zero();
-                //         covMat[i] = Eigen::Matrix3d::Zero();
-                //         area_point_num[i] = inliers->indices.size();
-
-                //         for(int j =0; j < inliers->indices.size(); j++){
-                //             Eigen::Vector3d tmp(cloud->points[inliers->indices[j]].x,
-                //                             cloud->points[inliers->indices[j]].y,
-                //                             cloud->points[inliers->indices[j]].z);
-                //             centers[i] = centers[i] + tmp;
-                //             covMat[i] = covMat[i] + tmp * tmp.transpose();
-
-                //         }
-                //         centers[i] = centers[i] / area_point_num[i];
-                //         covMat[i] = covMat[i] - area_point_num[i] * centers[i] * centers[i].transpose();
-                //         Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(covMat[i]);
-                //         if (saes.eigenvalues()[1] > plane_thres * saes.eigenvalues()[0] && saes.eigenvalues()[0] < 0.01){
-                //             Eigen::Vector3d normal = saes.eigenvectors().col(0);
-                //             normals[i] = normal;
-                //             min_eigenvalue[i] = saes.eigenvalues()[0];
-                //             double D = - normals[i].dot(centers[i]);
-                //             Eigen::Vector3d direct(index_tree->getInputCloud()->points[i].x, 
-                //                                     index_tree->getInputCloud()->points[i].y, 
-                //                                     index_tree->getInputCloud()->points[i].z);
-                //             double dis = - D / normals[i].dot(direct);
-                //             if(dis > 0 && dis < 100)
-                //                 feature[i] = dis;
-                //         }
-                //     }
-                // }
-
             }
         }
         std::cout<<"calculate_normal_and_feature svalid_num: "<<valid_num <<" / "<<tfcloud->points.size()<<std::endl;
@@ -377,13 +308,11 @@ public:
 
             pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);  
             // std::cout<<"ransac:"<<area_point_num[i]<<std::endl;
-            // 分配足够的空间给点云  
             cloud->width = area_point_num[i];  
             cloud->height = 1; 
             cloud->is_dense = true;  
             cloud->points.resize(cloud->width * cloud->height);  
 
-            // 将 std::vector<Eigen::Vector3d> 转换为 pcl::PointCloud<pcl::PointXYZ>  
             for (size_t j = 0; j < area_point_num[i]; ++j) {  
                 cloud->points[j].x = nearCorners[i][j](0);  
                 cloud->points[j].y = nearCorners[i][j](1);  
@@ -391,9 +320,7 @@ public:
             }  
 
             pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-            //inliers表示误差能容忍的点 记录的是点云的序号
             pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-            //创建分割器
             pcl::SACSegmentation<pcl::PointXYZ> seg;
             seg.setOptimizeCoefficients(true);
             seg.setModelType(pcl::SACMODEL_PLANE);
@@ -485,15 +412,6 @@ public:
     void calculate_normal_and_feature3(int plane_thres, int area_point_thres, double ransac_thres, bool FLAG_tf = true) {
         TicToc t_normal_feature;
 
-  
-        ///////////////////////for visual
-          
-        // pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));  
-        // viewer->setBackgroundColor(0, 0, 0); // 设置背景颜色（黑色）  
-        ///////////////////////for visual
-              
-
-
         #pragma omp parallel for num_threads(16)
         for (int i = 0; i < feature_length; i++) {
             pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);  
@@ -519,9 +437,8 @@ public:
 
 
             pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-            //inliers表示误差能容忍的点 记录的是点云的序号
+
             pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-            //创建分割器
             pcl::SACSegmentation<pcl::PointXYZI> seg;
             seg.setOptimizeCoefficients(true);
             seg.setModelType(pcl::SACMODEL_PLANE);
@@ -533,29 +450,13 @@ public:
         
             if((int)inliers->indices.size() > area_point_thres){
 
-                // std::cout<<"inlier num:"<< inliers->indices.size()<<" / "<< area_point_num[i]<<std::endl;
-                // std::cout << "Model coefficients: " << coefficients->values[0] << " "
-                //     << coefficients->values[1] << " "
-                //     << coefficients->values[2] << " "
-                //     << coefficients->values[3] << std::endl;
-
 
                 centers[i] = Eigen::Vector3d::Zero();
                 covMat[i] = Eigen::Matrix3d::Zero();
                 area_point_num[i] = inliers->indices.size();
                 std::vector<double> distance_list;
                 for(int j =0; j < (int) inliers->indices.size(); j++){
-            ///////////////////////for visual
 
-                    // pcl::PointXYZRGB point;
-                    // point.x = cloud->points[inliers->indices[j]].x;
-                    // point.y = cloud->points[inliers->indices[j]].y;
-                    // point.z = cloud->points[inliers->indices[j]].z;
-                    // point.r = 255;
-                    // point.g = 0;
-                    // point.b = 0;
-                    // inlier_cloud->points.push_back(point);
-            ///////////////////////for visual
 
                     Eigen::Vector3d tmp(area_points[i]->points[inliers->indices[j]].x,
                                     area_points[i]->points[inliers->indices[j]].y,
@@ -585,229 +486,22 @@ public:
                     }
                 }
             }
-            ///////////////////////for visual
-            // if(i %  1000 == 0 && (int)inliers->indices.size() > area_point_thres){
-            //     if(inlier_cloud->points.size() > 0){
-            //         inlier_cloud->width = inlier_cloud->points.size();  
-            //         inlier_cloud->height = 1; 
-            //         inlier_cloud->is_dense = true; 
-            //         pcl::io::savePCDFileASCII("/home/yjsx/tmp/inlier"+std::to_string(i)+".pcd", *inlier_cloud); 
-
-            //     }
-            //     if(cloud->points.size() > 0){
-            //         cloud->width = cloud->points.size();  
-            //         cloud->height = 1; 
-            //         cloud->is_dense = true;  
-            //         pcl::io::savePCDFileASCII("/home/yjsx/tmp/all"+std::to_string(i) +".pcd", *cloud); 
-                    
-            //     }
-            // }
-            // viewer->addPointCloud<pcl::PointXYZRGB>(cloud, "sample cloud"); // 添加点云  
-
-
-            // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 10, "sample cloud"); // 设置点云大小  
-            // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 30, "sample cloud2"); // 设置点云大小  
-
-            
-            // viewer->addCoordinateSystem(1.0); // 添加坐标系  
-            // viewer->initCameraParameters(); // 初始化相机参数  
-
-            // // 进入主循环，显示点云  
-            // while (!viewer->wasStopped())  
-            // {  
-            //     viewer->spinOnce(100);  
-            //     std::this_thread::sleep_for(std::chrono::milliseconds(100));  
-            // }
-            ///////////////////////for visual
+          
         }
-        std::cout << "\033[32m"; // 设置文本颜色为绿色
+        std::cout << "\033[32m";    
         std::cout<<"t_normal_feature: "<<t_normal_feature.toc()<<std::endl;
-        std::cout << "\033[0m";  // 重置文本颜色
+        std::cout << "\033[0m"; 
     }
 
             
-  
-        // ROS_WARN("calculate_normal_and_feature time: %f", t.toc());
-    
 
-    // void update(pcl::PointCloud<PointType>::Ptr tfcloud, int plane_thres) {
-    //     std::vector< std::vector<Eigen::Vector3d>> nearCorners(feature_length, std::vector<Eigen::Vector3d>());
-    //     std::vector<Eigen::Vector3d> new_centers(feature_length, Eigen::Vector3d::Zero());
-    //     // #pragma omp parallel for num_threads(16)
-    //     for (size_t i = 0; i < tfcloud->points.size(); ++i) {
-    //         Eigen::Vector3d point(tfcloud->points[i].x, tfcloud->points[i].y, tfcloud->points[i].z);
-    //         double distance = point.norm();
-    //         if(distance == 0)
-    //             continue;
-    //         Eigen::Vector3d point_normalized(point(0) / distance, point(1) / distance, point(2) / distance);
-    //         int k = 1;  
-    //         std::vector<int> pointIdxNKNSearch(k);
-    //         std::vector<float> pointNKNSquaredDistance(k);
-    //         PointType point_normalized_pcl;
-    //         point_normalized_pcl.x = point_normalized(0); 
-    //         point_normalized_pcl.y = point_normalized(1);
-    //         point_normalized_pcl.z = point_normalized(2);
-        
-    //         index_tree->nearestKSearch(point_normalized_pcl, k, pointIdxNKNSearch, pointNKNSquaredDistance);
-    //         for(int j = 0; j < k; j ++){
-    //             if((feature[pointIdxNKNSearch[j]] != 0 && std::abs(normals[pointIdxNKNSearch[j]].dot(point) - normals[pointIdxNKNSearch[j]].dot(centers[pointIdxNKNSearch[j]])) <0.1) || feature[pointIdxNKNSearch[j]] == 0){
-    //                 // std::cout<<std::abs(normals[pointIdxNKNSearch[j]].dot(point) - normals[pointIdxNKNSearch[j]].dot(centers[pointIdxNKNSearch[j]]))<<std::endl;
-    //                 nearCorners[pointIdxNKNSearch[j]].push_back(point);
-    //                 new_centers[pointIdxNKNSearch[j]] += point;
-    //             }
-    //             nearCorners[pointIdxNKNSearch[j]].push_back(point);
-    //             new_centers[pointIdxNKNSearch[j]] += point;
-    //             // indices[i] = pointIdxNKNSearch[j];
-    //         }
-    //     } 
-
-    //     int update_num = 0;
-    //     #pragma omp parallel for num_threads(16)
-
-    //     for (int i = 0; i < feature_length; i++) {
-    //         if(nearCorners[i].size() == 0)
-    //             continue;
-    //         int new_area_point_num = nearCorners[i].size();
-    //         Eigen::Matrix3d new_covMat = Eigen::Matrix3d::Zero();
-    //         Eigen::Vector3d all_center(0, 0, 0);
-            
-    //         if (new_area_point_num > 10) {
-    //             new_covMat = new_covMat + covMat[i] + area_point_num[i] * centers[i] * centers[i].transpose();
-                
-    //             // covMat[i] = covMat[i] + area_point_num[i] * centers[i] * centers[i].transpose(); //pp
-
-    //             all_center = (centers[i] * area_point_num[i] + new_centers[i]) / (area_point_num[i] + new_area_point_num);
-    //             // area_point_num[i] = area_point_num[i] + new_area_point_num;
-
-            
-    //             /////////////////
-    //             // for (int j = 0; j < point_size; j++){
-    //             //     Eigen::Matrix<double, 3, 1> tmpZeroMean = nearCorners[i][j] - center;
-    //             //     covMat = covMat + tmpZeroMean * tmpZeroMean.transpose();
-    //             // }
-    //             /////////////////
-    //             for (int j = 0; j < new_area_point_num; j++){
-    //                 // Eigen::Matrix<double, 3, 1> tmpZeroMean = nearCorners[i][j] - center;
-    //                 new_covMat = new_covMat + nearCorners[i][j] * nearCorners[i][j].transpose();
-    //             }
-    //             new_covMat = new_covMat - (new_area_point_num + area_point_num[i]) * all_center * all_center.transpose();
-    //             // covMat[i] = covMat[i] - area_point_num[i] * centers[i] * centers[i].transpose();
-    //             ///////////////
-
-    //             Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(new_covMat);
-
-    //             if (saes.eigenvalues()[1] > 20 * saes.eigenvalues()[0]){
-    //                 Eigen::Vector3d normal = saes.eigenvectors().col(0);
-
-    //                 double D = - normal.dot(all_center);
-    //                 Eigen::Vector3d direct(index_tree->getInputCloud()->points[i].x, 
-    //                                         index_tree->getInputCloud()->points[i].y, 
-    //                                         index_tree->getInputCloud()->points[i].z);
-    //                 double dis = - D / normal.dot(direct);
-    //                 if(dis > 0 && dis < 100 && dis - feature[i] > 0.1){
-    //                     // std::cout<<"update num: "<<new_area_point_num << " dis change: " << dis - feature[i] 
-    //                     //          <<" center change: "<<(centers[i] - all_center).norm()
-    //                     //          <<" normal change: "<<(normals[i] - normal).norm()<<std::endl;
-                        
-    //                     // if(dis - feature[i] > 1 || (normals[i] - normal).norm() > 1){
-    //                     //     std::cout<<"old dis: "<<feature[i]<<" new dis: "<<dis<<std::endl;
-    //                     //     std::cout<<"old center: "<<centers[i].transpose()<<" new center: "<<all_center.transpose()<<std::endl;
-    //                     //     std::cout<<"old normal: "<<normals[i].transpose()<<" new normal: "<<normal.transpose()<<std::endl;
-    //                     // }
-    //                     feature[i] = dis;
-    //                     normals[i] = normal;
-    //                     covMat[i] = new_covMat;
-    //                     area_point_num[i] = area_point_num[i] + new_area_point_num;
-    //                     centers[i] = all_center;
-    //                     update_num ++;
-
-    //                 }
-    //             }
-    //         }
-    //     } 
-    //     std::cout<<"update num: "<<update_num<<std::endl;
-    // }
-    
-    int update2(std::shared_ptr<TERRA> TERRA_frame, int plane_thres) {
+    int update(std::shared_ptr<CELL> CELL_frame, int plane_thres) {
         TicToc t_update;
         int update_num = 0;
         int occluded_num = 0;
         #pragma omp parallel for num_threads(16)
         for (int i = 0; i < feature_length; i++) {
-            if(TERRA_frame->feature[i] == 0)// 未构成有效平面
-                continue;
-            if(feature[i] != 0){ //原来有平面
-                // ROS_WARN("normal distance: %f, feature distance: %f", normals[i].dot(TERRA_frame->normals[i]), abs(feature[i] - TERRA_frame->feature[i]));
-                if(abs(TERRA_frame->normals[i].dot(normals[i])) > 0.95 )// 更新不大
-                    continue;
-                if(abs(TERRA_frame->feature[i] - feature[i]) > 2){// 被遮挡的被看见了
-                    #pragma omp atomic
-                    occluded_num ++;
-                    continue;
-                }
-
-                else{ // 更新
-                    int new_area_point_num = area_point_num[i] + TERRA_frame->area_point_num[i];
-                    Eigen::Vector3d new_center = (centers[i] * area_point_num[i] + TERRA_frame->centers[i] * TERRA_frame->area_point_num[i]) / (area_point_num[i] + TERRA_frame->area_point_num[i]);
-                    Eigen::Matrix3d new_covMat = (covMat[i] + 
-                                                area_point_num[i] * centers[i] * centers[i].transpose() + 
-                                                TERRA_frame->covMat[i] + 
-                                                TERRA_frame->area_point_num[i] * TERRA_frame->centers[i] * TERRA_frame->centers[i].transpose()) - 
-                                                 new_area_point_num * new_center * new_center.transpose();
-
-                    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(new_covMat);
-
-                    if (saes.eigenvalues()[1] > plane_thres * saes.eigenvalues()[0] ){ //&&  saes.eigenvalues()[0] < 0.01
-                        Eigen::Vector3d normal = saes.eigenvectors().col(0);
-
-                        double D = - normal.dot(new_center);
-                        Eigen::Vector3d direct(index_tree->getInputCloud()->points[i].x, 
-                                                index_tree->getInputCloud()->points[i].y, 
-                                                index_tree->getInputCloud()->points[i].z);
-                        double dis = - D / normal.dot(direct);
-                        if(dis > 0 && dis < 100 && dis - feature[i] > 0.1){
-                            min_eigenvalue[i] = saes.eigenvalues()[0];
-                            feature[i] = dis;
-                            normals[i] = normal;
-                            covMat[i] = new_covMat;
-                            area_point_num[i] = new_area_point_num;
-                            centers[i] = new_center;
-                            #pragma omp atomic
-                            update_num ++;
-
-                        }
-                    }
-                }
-            }
-            else{ //新增
-                if(TERRA_frame->feature[i] != 0){
-                    min_eigenvalue[i]   = TERRA_frame->min_eigenvalue[i];
-
-                    feature[i]          = TERRA_frame->feature[i];
-                    normals[i]          = TERRA_frame->normals[i];       
-                    covMat[i]           = TERRA_frame->covMat[i];        
-                    area_point_num[i]   = TERRA_frame->area_point_num[i];
-                    centers[i]          = TERRA_frame->centers[i];    
-                    #pragma omp atomic   
-                    new_num ++;
-                }
-            }
-        }
-        
-        std::cout<<"t_update: "<<t_update.toc()<<std::endl;
-        std::cout << "\033[32m"; // 设置文本颜色为绿色
-        std::cout << "update num: " << update_num << " new num: " << new_num << " occluded num: " << occluded_num << std::endl;
-        std::cout << "\033[0m";  // 重置文本颜色
-        return occluded_num;
-    }
-
-    int update3(std::shared_ptr<TERRA> TERRA_frame, int plane_thres) {
-        TicToc t_update;
-        int update_num = 0;
-        int occluded_num = 0;
-        #pragma omp parallel for num_threads(16)
-        for (int i = 0; i < feature_length; i++) {
-            *area_points[i] += *TERRA_frame->get_area_points(i);   
+            *area_points[i] += *CELL_frame->get_area_points(i);   
         }
         
         std::cout << "\033[32m"; // 设置文本颜色为绿色
@@ -905,14 +599,25 @@ public:
 
 
     
-    //TERRA to pcl::PointXYZI
-    void pub_ros_feature(ros::Publisher publisher, std::string frame_id = "map") {
+    //CELL to pcl::PointXYZI
+    void pub_ros_feature(ros::Publisher publisher, std::string frame_id = "map", std::string cellmap_path = "", int id=0) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloudout(new pcl::PointCloud<pcl::PointXYZI>);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloudsave(new pcl::PointCloud<pcl::PointXYZI>);
+
         // std::cout<<"feature_id:"<<" ";
+
+        std::stringstream cell_path;
+        cell_path << cellmap_path << "cell_" << id << ".pcd";
+        std::cout<<"cell_path:"<<cell_path.str()<<std::endl;    
+        std::stringstream index_path;
+        index_path << cellmap_path << "index_" << id << ".txt";
+        std::ofstream index_file(index_path.str(), ios::out | ios::trunc);
+        std::cout<<"index_path:"<<index_path.str()<<std::endl;
+
 
         for (int i = 0; i < feature_length; i++) {
             if (feature[i] != 0) {
-                // std::cout<<i<<" ";
+                index_file << i << " ";
                 pcl::PointXYZI p;
                 p.x = normals[i](0);
                 p.y = normals[i](1);
@@ -920,6 +625,7 @@ public:
                 p.intensity = feature[i];
 
                 cloudout->points.push_back(p);
+                cloudsave->points.push_back(p);
             }
             else{
                 pcl::PointXYZI p;
@@ -931,8 +637,11 @@ public:
                 cloudout->points.push_back(p);
             }            
         }
-        // std::cout<<std::endl;
-
+        cloudsave->width = cloudsave->points.size();
+        cloudsave->height = 1;
+        cloudsave->is_dense = true;
+        pcl::io::savePCDFile(cell_path.str(), *cloudsave);
+        index_file.close();
         sensor_msgs::PointCloud2 cloudtempmsg;
         pcl::toROSMsg(*cloudout, cloudtempmsg);
         cloudtempmsg.header.stamp =  ros::Time().fromSec(timestamp);
@@ -940,7 +649,7 @@ public:
         publisher.publish(cloudtempmsg);
     }
 
-    //pcl::PointXYZINormal to TERRA 
+    //pcl::PointXYZINormal to CELL 
 
     void from_ros_feature(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud) {
         

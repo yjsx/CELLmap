@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(CELLmap)
+project(cellmap)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -17,7 +17,6 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   tf
   eigen_conversions
-  sa_msgs
 )
 
 find_package(Eigen3)
@@ -50,7 +49,7 @@ link_directories(
 )
 
 catkin_package(
-  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs sa_msgs
+  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs 
   DEPENDS EIGEN3 PCL Ceres 
   INCLUDE_DIRS include
 )
@@ -60,17 +59,14 @@ catkin_package(
 # add_executable(record_kitti_tra src/record_kitti_tra.cpp)
 # target_link_libraries(record_kitti_tra ${EIGEN3_LIBRARIES} ${catkin_LIBRARIES})
 
-add_executable(pub_pose_from_file src/pub_pose_from_file.cpp)
-target_link_libraries(pub_pose_from_file ${catkin_LIBRARIES})
+add_executable(pub_pose_cloud src/pub_pose_cloud.cpp)
+target_link_libraries(pub_pose_cloud ${catkin_LIBRARIES})
 
 add_executable(pub_cloud_from_bag src/pub_cloud_from_bag.cpp)
 target_link_libraries(pub_cloud_from_bag ${catkin_LIBRARIES})
 
-add_executable(jh_pointcloud_to_cell_node src/pointcloud_to_cell.cpp src/lidarOptimization.cpp)
-target_link_libraries(jh_pointcloud_to_cell_node ${EIGEN3_LIBRARIES} ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} OpenMP::OpenMP_CXX)
+add_executable(pointcloud_to_cell_node src/pointcloud_to_cell.cpp src/lidarOptimization.cpp)
+target_link_libraries(pointcloud_to_cell_node ${EIGEN3_LIBRARIES} ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} OpenMP::OpenMP_CXX)
 
-add_executable(jh_backend_node src/backend.cpp src/lidarOptimization.cpp)
-target_link_libraries(jh_backend_node ${EIGEN3_LIBRARIES} ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} gtsam OpenMP::OpenMP_CXX)
-
-add_executable(read_gnss_from_rosbag src/read_gnss_from_rosbag.cpp)
-target_link_libraries(read_gnss_from_rosbag ${catkin_LIBRARIES})
+add_executable(backend_node src/backend.cpp src/lidarOptimization.cpp)
+target_link_libraries(backend_node ${EIGEN3_LIBRARIES} ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} gtsam OpenMP::OpenMP_CXX)

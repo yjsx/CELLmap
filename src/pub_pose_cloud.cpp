@@ -7,10 +7,11 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 #include <sensor_msgs/PointCloud2.h>
-
+#include <chrono>
+#include <thread>
 struct PoseWithTimestamp {
     double timestamp;
-    Eigen::Matrix<float, 4, 4> pose;
+    Eigen::Matrix<float, 7, 1> pose;
 };
 
 struct RosbagMessage {
@@ -38,15 +39,8 @@ std::vector<PoseWithTimestamp> loadPoses(const std::string &path) {
         float x, y, z, qx, qy, qz, qw;
         ss >> x >> y >> z >> qx >> qy >> qz >> qw;
 
-        // Convert quaternion to rotation matrix
-        Eigen::Quaternionf q(qw, qx, qy, qz);
-        Eigen::Matrix<float, 4, 4> pose = Eigen::Matrix<float, 4, 4>::Identity();
-        pose.block<3, 3>(0, 0) = q.toRotationMatrix();
-        pose(0, 3) = x;
-        pose(1, 3) = y;
-        pose(2, 3) = z;
-
-        pose_data.pose = pose;
+        // Store the position and quaternion directly into the pose vector
+        pose_data.pose << x, y, z, qx, qy, qz, qw;
         poses.push_back(pose_data);
     }
     input.close();
@@ -61,15 +55,19 @@ int main(int argc, char **argv) {
 
     // Publishers
     ros::Publisher pose_pub = nh.advertise<nav_msgs::Odometry>("/odom", 100);
-    ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/jh_cloud", 100);
+    ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/raw_cloud", 100);
     int rate_in = 10;
+    int time_type = 0; // 0 for bag time, 1 for head time
     // Get parameters
     std::string pose_file_path, rosbag_path, pointcloud_topic;
     nh.param<std::string>("pose_file_path", pose_file_path, "");
     nh.param<std::string>("rosbag_path", rosbag_path, "");
     nh.param<std::string>("pointcloud_topic", pointcloud_topic, "/pointcloud");
     nh.param<int>("rate_in", rate_in, 10);
+    nh.param<int>("time_type", time_type, 0);
 
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
 
     if (pose_file_path.empty() || rosbag_path.empty()) {
         ROS_ERROR("Missing required parameters: pose_file_path and rosbag_path");
@@ -91,72 +89,52 @@ int main(int argc, char **argv) {
     // Create view for pointcloud topic
     rosbag::View view(bag, rosbag::TopicQuery(pointcloud_topic));
 
-    // Create message queue
-    std::vector<RosbagMessage> messages;
-    for (const rosbag::MessageInstance& m : view) {
-        RosbagMessage msg;
-        msg.timestamp = m.getTime();
-        
-        if (m.getTopic() == pointcloud_topic) {
-            msg.pointcloud = m.instantiate<sensor_msgs::PointCloud2>();
-        }
-        messages.push_back(msg);
-    }
-
-    // Sort messages by timestamp
-    std::sort(messages.begin(), messages.end(), 
-        [](const RosbagMessage& a, const RosbagMessage& b) {
-            return a.timestamp < b.timestamp;
-        });
-
-    // Main loop
     size_t pose_idx = 0;
     size_t msg_idx = 0;
     ros::Rate rate(rate_in);  // 30 Hz
     const double sync_threshold = 0.01; // 10ms sync threshold
     std::cout<<"Start reading rosbag and publishing pose and pointcloud."<<std::endl;
-    while (ros::ok() && pose_idx < poses.size() && msg_idx < messages.size()) {
+
+    for (const rosbag::MessageInstance& m : view) {
+        if( pose_idx >= poses.size() || ros::ok() == false)
+            break;
         const auto& pose_data = poses[pose_idx];
-        const auto& msg = messages[msg_idx];
-        double time_diff = fabs(pose_data.timestamp - msg.timestamp.toSec());
+        
+        RosbagMessage msg;
+        if (m.getTopic() == pointcloud_topic) {
+            msg.pointcloud = m.instantiate<sensor_msgs::PointCloud2>();
+            if(time_type == 0)
+                msg.timestamp = m.getTime();
+            else {
+                msg.timestamp = msg.pointcloud->header.stamp;
+            }
 
-        // Find synchronized messages
-        if (time_diff < sync_threshold) {
-            // Publish odometry
-            nav_msgs::Odometry ros_pose;
-            ros_pose.header.stamp = ros::Time().fromSec(pose_data.timestamp);
-            ros_pose.header.frame_id = "map";
-            ros_pose.pose.pose.position.x = pose_data.pose(0, 3);
-            ros_pose.pose.pose.position.y = pose_data.pose(1, 3);
-            ros_pose.pose.pose.position.z = pose_data.pose(2, 3);
-            Eigen::Quaternionf q(pose_data.pose.block<3, 3>(0, 0));
-            ros_pose.pose.pose.orientation.x = q.x();
-            ros_pose.pose.pose.orientation.y = q.y();
-            ros_pose.pose.pose.orientation.z = q.z();
-            ros_pose.pose.pose.orientation.w = q.w();
-            pose_pub.publish(ros_pose);
-
-            // Publish synchronized pointcloud
-            if (msg.pointcloud) {
+        
+            double time_diff = fabs(pose_data.timestamp - msg.timestamp.toSec());
+            if (time_diff < sync_threshold) {
+                nav_msgs::Odometry ros_pose;
+                ros_pose.header.stamp = ros::Time().fromSec(pose_data.timestamp);
+                ros_pose.header.frame_id = "map";
+                ros_pose.pose.pose.position.x = pose_data.pose(0);
+                ros_pose.pose.pose.position.y = pose_data.pose(1);
+                ros_pose.pose.pose.position.z = pose_data.pose(2);
+                ros_pose.pose.pose.orientation.x = pose_data.pose(3);
+                ros_pose.pose.pose.orientation.y = pose_data.pose(4);
+                ros_pose.pose.pose.orientation.z = pose_data.pose(5);
+                ros_pose.pose.pose.orientation.w = pose_data.pose(6);
+                pose_pub.publish(ros_pose);
                 sensor_msgs::PointCloud2 cloud = *msg.pointcloud;
                 cloud.header.stamp = ros_pose.header.stamp;
                 cloud_pub.publish(cloud);
+                pose_idx++;
             }
-
-            // Move both indices forward
-            pose_idx++;
-            msg_idx++;
+            else{
+                ROS_WARN("Time difference is too large: %f", time_diff);
+            }
+            rate.sleep();
         }
-        // Move the earlier timestamp forward
-        else if (pose_data.timestamp < msg.timestamp.toSec()) {
-            pose_idx++;
-        } else {
-            msg_idx++;
-        }
-
-        rate.sleep();
     }
-
+    
     bag.close();
 
     return 0;  

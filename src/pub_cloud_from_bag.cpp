@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
 
     // Publishers
     ros::Publisher pose_pub = nh.advertise<nav_msgs::Odometry>("/odom", 100);
-    ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/jh_cloud", 100);
+    ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/raw_cloud", 100);
     int rate_in = 10;
     // Get parameters
     std::string  rosbag_path, pointcloud_topic;
