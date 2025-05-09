@@ -4,7 +4,7 @@ This work is the official implementation of "CELLmap: Enhancing LiDAR SLAM throu
 
 #### [[Video](https://youtu.be/u3f5F_YoFQ4?si=vhvzE56wz8Fon3w_)] [[Preprint Paper](https://arxiv.org/abs/2409.19597)]   
 
-**Author:** [Yifan Duan](yjsx.top), University of Science and Technology of China, China
+**Author:** [Yifan Duan](https://yjsx.top), University of Science and Technology of China, China
 
 
 ## 1. Prerequisites and build
